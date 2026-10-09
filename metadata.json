@@ -1,0 +1,6 @@
+{
+  "name": "StreamTune",
+  "description": "Stream YouTube audio ad-free with NewPipeExtractor and Jetpack Media3 player.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
