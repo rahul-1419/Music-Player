@@ -4,6 +4,7 @@ import com.example.data.local.FavoriteSongEntity
 import com.example.data.local.HistorySongEntity
 import com.example.data.local.MusicDao
 import com.example.data.local.RecentSearchEntity
+import com.example.extractor.ExtractedAudio
 import com.example.extractor.YouTubeMusicExtractor
 import com.example.model.Song
 import kotlinx.coroutines.flow.Flow
@@ -82,12 +83,12 @@ class MusicRepository(
         return extractor.searchSongs(query)
     }
 
-    suspend fun extractAudioStream(song: Song): Pair<String, Pair<Int?, String?>> {
+    suspend fun extractAudioStream(song: Song): ExtractedAudio {
         return extractor.extractAudioStreamUrl(song.webUrl)
     }
 
-    suspend fun extractFallbackAudioStream(videoId: String): Pair<String, Pair<Int?, String?>> {
-        return extractor.extractFallbackAudioStream(videoId)
+    suspend fun extractFallbackAudioStream(videoId: String): ExtractedAudio {
+        return extractor.getFallbackAudioStream(videoId)
     }
 
     fun getCuratedSongs(query: String = ""): List<Song> {

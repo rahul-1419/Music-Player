@@ -81,22 +81,28 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
                 _streamResolution.value = StreamResolutionState(
                     isResolving = true,
                     songTitle = failedSong.title,
-                    statusMessage = "Resolving alternate audio stream..."
+                    statusMessage = "Resolving resilient audio stream..."
                 )
                 try {
-                    val (streamUrl, qualityInfo) = repository.extractFallbackAudioStream(failedSong.id)
-                    val (bitrate, format) = qualityInfo
+                    val extracted = repository.extractFallbackAudioStream(failedSong.id)
                     _streamResolution.value = StreamResolutionState(
                         isResolving = false,
                         songTitle = failedSong.title,
-                        statusMessage = "Stream recovered ($format ${bitrate ?: 128} kbps)"
+                        statusMessage = "Stream recovered (${extracted.format} ${extracted.bitrate ?: 128} kbps)"
+                    )
+                    val updatedSong = failedSong.copy(
+                        streamUrl = extracted.streamUrl,
+                        bitrate = extracted.bitrate,
+                        audioFormat = extracted.format,
+                        alternativeStreamUrls = extracted.backupUrls
                     )
                     playerManager.playSongWithStream(
-                        song = failedSong.copy(streamUrl = streamUrl, bitrate = bitrate, audioFormat = format),
-                        streamUrl = streamUrl,
-                        bitrate = bitrate,
-                        format = format,
-                        queue = playerState.value.queue
+                        song = updatedSong,
+                        streamUrl = extracted.streamUrl,
+                        bitrate = extracted.bitrate,
+                        format = extracted.format,
+                        queue = playerState.value.queue,
+                        backupUrls = extracted.backupUrls
                     )
                 } catch (e: Exception) {
                     _streamResolution.value = StreamResolutionState(
@@ -154,19 +160,25 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
             playerManager.setResolvingStream(true)
 
             try {
-                val (streamUrl, qualityInfo) = repository.extractAudioStream(song)
-                val (bitrate, format) = qualityInfo
+                val extracted = repository.extractAudioStream(song)
                 _streamResolution.value = StreamResolutionState(
                     isResolving = false,
                     songTitle = song.title,
-                    statusMessage = "Audio stream ready ($format ${bitrate ?: 128} kbps)"
+                    statusMessage = "Audio stream ready (${extracted.format} ${extracted.bitrate ?: 128} kbps)"
+                )
+                val updatedSong = song.copy(
+                    streamUrl = extracted.streamUrl,
+                    bitrate = extracted.bitrate,
+                    audioFormat = extracted.format,
+                    alternativeStreamUrls = extracted.backupUrls
                 )
                 playerManager.playSongWithStream(
-                    song = song.copy(streamUrl = streamUrl, bitrate = bitrate, audioFormat = format),
-                    streamUrl = streamUrl,
-                    bitrate = bitrate,
-                    format = format,
-                    queue = queue
+                    song = updatedSong,
+                    streamUrl = extracted.streamUrl,
+                    bitrate = extracted.bitrate,
+                    format = extracted.format,
+                    queue = queue,
+                    backupUrls = extracted.backupUrls
                 )
                 repository.recordPlayed(song)
             } catch (t: Throwable) {

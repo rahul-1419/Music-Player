@@ -11,7 +11,8 @@ data class Song(
     val bitrate: Int? = null,
     val audioFormat: String? = null,
     val isFavorite: Boolean = false,
-    val views: Long = 0
+    val views: Long = 0,
+    val alternativeStreamUrls: List<String> = emptyList()
 ) {
     val formattedDuration: String
         get() {

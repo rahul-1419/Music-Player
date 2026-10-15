@@ -8,12 +8,15 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import com.example.model.Song
+import com.example.util.NetworkConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,13 +60,13 @@ class MusicPlayerManager(
     private val scope: CoroutineScope
 ) {
     companion object {
-        const val STREAM_USER_AGENT =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+        const val STREAM_USER_AGENT = NetworkConfig.USER_AGENT
     }
 
     private var exoPlayer: ExoPlayer? = null
     private var progressUpdateJob: Job? = null
     private var lastFailedSongId: String? = null
+    private val pendingCandidateUrls = mutableListOf<String>()
 
     var onErrorFallback: ((Song, Boolean) -> Unit)? = null
 
@@ -81,22 +84,44 @@ class MusicPlayerManager(
                 .setUsage(C.USAGE_MEDIA)
                 .build()
 
-            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-                .setUserAgent(STREAM_USER_AGENT)
-                .setAllowCrossProtocolRedirects(true)
-                .setConnectTimeoutMs(20000)
-                .setReadTimeoutMs(25000)
-                .setDefaultRequestProperties(
-                    mapOf(
-                        "Origin" to "https://www.youtube.com",
-                        "Referer" to "https://www.youtube.com/",
-                        "Accept" to "*/*",
-                        "Accept-Encoding" to "identity;q=1, *;q=0"
-                    )
-                )
+            val defaultHeaders = mapOf(
+                "User-Agent" to NetworkConfig.USER_AGENT,
+                "Referer" to "https://www.youtube.com/",
+                "Origin" to "https://www.youtube.com",
+                "Accept" to "*/*"
+            )
 
-            val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
-            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent(NetworkConfig.USER_AGENT)
+                .setAllowCrossProtocolRedirects(true)
+                .setConnectTimeoutMs(15_000)
+                .setReadTimeoutMs(15_000)
+                .setDefaultRequestProperties(defaultHeaders)
+
+            val baseDataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+
+            // ResolvingDataSource dynamically injects required headers for googlevideo streams
+            val resolvingDataSourceFactory = ResolvingDataSource.Factory(
+                baseDataSourceFactory,
+                object : ResolvingDataSource.Resolver {
+                    override fun resolveDataSpec(dataSpec: DataSpec): DataSpec {
+                        val uriStr = dataSpec.uri.toString()
+                        if (uriStr.contains("googlevideo.com") || uriStr.contains("youtube.com")) {
+                            val headers = HashMap(dataSpec.httpRequestHeaders)
+                            headers["Referer"] = "https://www.youtube.com/"
+                            headers["Origin"] = "https://www.youtube.com"
+                            headers["User-Agent"] = NetworkConfig.USER_AGENT
+                            headers["Accept"] = "*/*"
+                            return dataSpec.buildUpon()
+                                .setHttpRequestHeaders(headers)
+                                .build()
+                        }
+                        return dataSpec
+                    }
+                }
+            )
+
+            val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
 
             val builder = ExoPlayer.Builder(context)
                 .setMediaSourceFactory(mediaSourceFactory)
@@ -126,14 +151,32 @@ class MusicPlayerManager(
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        val cause = error.cause
-                        val is403 = (cause is HttpDataSource.InvalidResponseCodeException && cause.responseCode == 403)
-                                || error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-
                         val curSong = _playerState.value.currentSong
-                        if (is403 && curSong != null && lastFailedSongId != curSong.id) {
+                        if (curSong != null && pendingCandidateUrls.isNotEmpty()) {
+                            val nextUrl = pendingCandidateUrls.removeAt(0)
+                            android.util.Log.w("StreamTune", "Playback error on stream: ${error.errorCodeName}. Auto-fallback to next stream candidate...")
+                            _playerState.value = _playerState.value.copy(
+                                errorMessage = "Switching to alternative stream...",
+                                currentStreamUrl = nextUrl
+                            )
+                            val metadata = MediaMetadata.Builder()
+                                .setTitle(curSong.title)
+                                .setArtist(curSong.artist)
+                                .setArtworkUri(Uri.parse(curSong.thumbnailUrl))
+                                .build()
+                            val nextMediaItem = MediaItem.Builder()
+                                .setUri(Uri.parse(nextUrl))
+                                .setMediaId(curSong.id)
+                                .setMediaMetadata(metadata)
+                                .build()
+                            this@apply.setMediaItem(nextMediaItem)
+                            this@apply.prepare()
+                            this@apply.play()
+                        } else if (curSong != null && lastFailedSongId != curSong.id) {
                             lastFailedSongId = curSong.id
-                            // Trigger fallback stream resolution
+                            _playerState.value = _playerState.value.copy(
+                                errorMessage = "Switching to resilient stream..."
+                            )
                             onErrorFallback?.invoke(curSong, true)
                         } else {
                             _playerState.value = _playerState.value.copy(
@@ -203,11 +246,16 @@ class MusicPlayerManager(
         streamUrl: String,
         bitrate: Int?,
         format: String?,
-        queue: List<Song> = listOf(song)
+        queue: List<Song> = listOf(song),
+        backupUrls: List<String> = song.alternativeStreamUrls
     ) {
         val player = exoPlayer ?: return
         val currentQueue = if (queue.isNotEmpty()) queue else listOf(song)
         val qIndex = currentQueue.indexOfFirst { it.id == song.id }.let { if (it == -1) 0 else it }
+
+        pendingCandidateUrls.clear()
+        pendingCandidateUrls.addAll(backupUrls.filter { it != streamUrl })
+        lastFailedSongId = null
 
         val metadata = MediaMetadata.Builder()
             .setTitle(song.title)
