@@ -20,7 +20,7 @@ data class ExtractedAudio(
     val backupUrls: List<String> = emptyList()
 )
 
-class YouTubeMusicExtractor {
+open class YouTubeMusicExtractor {
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -35,7 +35,7 @@ class YouTubeMusicExtractor {
         }
     }
 
-    suspend fun searchSongs(query: String): List<Song> = withContext(Dispatchers.IO) {
+    open suspend fun searchSongs(query: String): List<Song> = withContext(Dispatchers.IO) {
         try {
             val service = ServiceList.YouTube
             val searchExtractor = service.getSearchExtractor(
@@ -66,7 +66,7 @@ class YouTubeMusicExtractor {
         }
     }
 
-    suspend fun extractAudioStreamUrl(videoUrlOrId: String): ExtractedAudio =
+    open suspend fun extractAudioStreamUrl(videoUrlOrId: String): ExtractedAudio =
         withContext(Dispatchers.IO) {
             val fullUrl = if (videoUrlOrId.startsWith("http")) {
                 videoUrlOrId
@@ -194,7 +194,7 @@ class YouTubeMusicExtractor {
         return list
     }
 
-    fun getCuratedSuggestions(query: String = ""): List<Song> {
+    open fun getCuratedSuggestions(query: String = ""): List<Song> {
         val allCurated = listOf(
             Song(
                 id = "Umqb9KENgmk",

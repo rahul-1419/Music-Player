@@ -27,6 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Pause
@@ -43,6 +46,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import com.example.autoplay.AutoplayState
+import com.example.autoplay.AutoplayStatus
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -89,6 +97,8 @@ import com.example.ui.theme.WaveEmerald
 fun NowPlayingSheet(
     playerState: PlayerState,
     isFavorite: Boolean,
+    isAutoplayEnabled: Boolean = true,
+    autoplayState: AutoplayState = AutoplayState(),
     onCollapse: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -100,7 +110,9 @@ fun NowPlayingSheet(
     onToggleShuffle: () -> Unit,
     onSetSpeed: (Float) -> Unit,
     onToggleFavorite: () -> Unit,
+    onToggleAutoplay: () -> Unit = {},
     onShowStreamInfo: () -> Unit,
+    onOpenQueue: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val song = playerState.currentSong ?: return
@@ -170,15 +182,28 @@ fun NowPlayingSheet(
                     )
                 }
 
-                IconButton(
-                    onClick = onShowStreamInfo,
-                    modifier = Modifier.testTag("stream_info_button")
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "Stream Details",
-                        tint = TextSecondary
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onOpenQueue,
+                        modifier = Modifier.testTag("open_queue_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                            contentDescription = "Playback Queue",
+                            tint = NeonCyan
+                        )
+                    }
+
+                    IconButton(
+                        onClick = onShowStreamInfo,
+                        modifier = Modifier.testTag("stream_info_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = "Stream Details",
+                            tint = TextSecondary
+                        )
+                    }
                 }
             }
 
@@ -497,7 +522,142 @@ fun NowPlayingSheet(
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // Spotify-inspired Autoplay Similar Content Card
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .testTag("autoplay_card"),
+                color = SurfaceVariantDark
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isAutoplayEnabled) NeonCyan.copy(alpha = 0.2f) else SurfaceDark),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "Autoplay",
+                                    tint = if (isAutoplayEnabled) NeonCyan else TextMuted,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Autoplay Similar Content",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    ),
+                                    color = TextPrimary
+                                )
+                                Text(
+                                    text = if (isAutoplayEnabled) "Keep music playing when queue ends" else "Autoplay disabled at queue end",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                    color = TextSecondary
+                                )
+                            }
+                        }
+
+                        Switch(
+                            checked = isAutoplayEnabled,
+                            onCheckedChange = { onToggleAutoplay() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = NeonCyan,
+                                uncheckedTrackColor = SurfaceDark,
+                                uncheckedBorderColor = TextMuted.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.testTag("autoplay_switch")
+                        )
+                    }
+
+                    // Dynamic Autoplay status / active recommendation explanation banner
+                    if (isAutoplayEnabled && (
+                            autoplayState.status == AutoplayStatus.RECOMMENDING ||
+                            autoplayState.status == AutoplayStatus.RESOLVING ||
+                            autoplayState.status == AutoplayStatus.PLAYING
+                        )
+                    ) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        HorizontalDivider(color = SurfaceDark, thickness = 1.dp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            when (autoplayState.status) {
+                                AutoplayStatus.RECOMMENDING -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        color = NeonCyan,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Finding similar songs to keep music playing...",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                        color = NeonCyan
+                                    )
+                                }
+                                AutoplayStatus.RESOLVING -> {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(12.dp),
+                                        color = ElectricViolet,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Resolving ${autoplayState.currentCandidate?.title ?: "next track"}...",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                AutoplayStatus.PLAYING -> {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = WaveEmerald,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Autoplay • ${autoplayState.candidateExplanation ?: "Similar artist match"}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Medium),
+                                        color = WaveEmerald,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                else -> {}
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Playback speed selector chips
             Row(

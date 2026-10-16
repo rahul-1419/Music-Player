@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Favorite
@@ -62,6 +63,7 @@ import com.example.ui.NavigationTab
 import com.example.ui.components.AudioVisualizerWave
 import com.example.ui.components.MiniPlayerBar
 import com.example.ui.components.NowPlayingSheet
+import com.example.ui.components.QueueSheet
 import com.example.ui.components.StreamInfoDialog
 import com.example.ui.theme.BackgroundDark
 import com.example.ui.theme.CoralPink
@@ -90,12 +92,19 @@ fun MainScreen(
     val streamResolution by viewModel.streamResolution.collectAsState()
     val isNowPlayingExpanded by viewModel.isNowPlayingExpanded.collectAsState()
     val showAudioInfoDialog by viewModel.showAudioInfoDialog.collectAsState()
+    val isAutoplayEnabled by viewModel.isAutoplayEnabled.collectAsState()
+    val autoplayState by viewModel.autoplayState.collectAsState()
+    val isQueueOpen by viewModel.isQueueOpen.collectAsState()
 
-    BackHandler(enabled = isNowPlayingExpanded) {
+    BackHandler(enabled = isQueueOpen) {
+        viewModel.setQueueOpen(false)
+    }
+
+    BackHandler(enabled = !isQueueOpen && isNowPlayingExpanded) {
         viewModel.setNowPlayingExpanded(false)
     }
 
-    BackHandler(enabled = !isNowPlayingExpanded && currentTab != NavigationTab.EXPLORE) {
+    BackHandler(enabled = !isQueueOpen && !isNowPlayingExpanded && currentTab != NavigationTab.EXPLORE) {
         viewModel.selectTab(NavigationTab.EXPLORE)
     }
 
@@ -146,43 +155,55 @@ fun MainScreen(
                         }
                     },
                     actions = {
-                        // Extraction indicator chip
-                        if (streamResolution.isResolving) {
-                            Surface(
-                                shape = CircleShape,
-                                color = ElectricViolet.copy(alpha = 0.2f),
-                                modifier = Modifier.padding(end = 8.dp)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(12.dp),
-                                        color = NeonCyan,
-                                        strokeWidth = 2.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Extracting...",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        ),
-                                        color = NeonCyan
-                                    )
-                                }
-                            }
-                        } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
-                                onClick = { viewModel.setShowAudioInfoDialog(true) },
-                                modifier = Modifier.testTag("appbar_info_button")
+                                onClick = { viewModel.setQueueOpen(true) },
+                                modifier = Modifier.testTag("appbar_queue_button")
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.ElectricBolt,
-                                    contentDescription = "Architecture Pipeline",
-                                    tint = ElectricViolet
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = "Playback Queue",
+                                    tint = NeonCyan
                                 )
+                            }
+
+                            if (streamResolution.isResolving) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = ElectricViolet.copy(alpha = 0.2f),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            color = NeonCyan,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Extracting...",
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = NeonCyan
+                                        )
+                                    }
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = { viewModel.setShowAudioInfoDialog(true) },
+                                    modifier = Modifier.testTag("appbar_info_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ElectricBolt,
+                                        contentDescription = "Architecture Pipeline",
+                                        tint = ElectricViolet
+                                    )
+                                }
                             }
                         }
                     },
@@ -327,8 +348,9 @@ fun MainScreen(
                             onQueryChange = { viewModel.onSearchQueryChange(it) },
                             onSearch = { viewModel.performSearch(it) },
                             onRemoveRecentSearch = { viewModel.removeRecentSearch(it) },
-                            onSongClick = { song, list -> viewModel.playSong(song, list) },
-                            onFavoriteToggle = { song -> viewModel.toggleFavorite(song) }
+                            onSongClick = { song -> viewModel.playSongFromSearch(song) },
+                            onFavoriteToggle = { song -> viewModel.toggleFavorite(song) },
+                            onAddToQueue = { song -> viewModel.addSongToQueue(song) }
                         )
                     }
 
@@ -365,6 +387,8 @@ fun MainScreen(
             NowPlayingSheet(
                 playerState = playerState,
                 isFavorite = isCurrentFav,
+                isAutoplayEnabled = isAutoplayEnabled,
+                autoplayState = autoplayState,
                 onCollapse = { viewModel.setNowPlayingExpanded(false) },
                 onPlayPause = { viewModel.playerManager.togglePlayPause() },
                 onNext = { viewModel.playNext() },
@@ -378,7 +402,27 @@ fun MainScreen(
                 onToggleFavorite = {
                     playerState.currentSong?.let { viewModel.toggleFavorite(it) }
                 },
-                onShowStreamInfo = { viewModel.setShowAudioInfoDialog(true) }
+                onToggleAutoplay = { viewModel.toggleAutoplay() },
+                onShowStreamInfo = { viewModel.setShowAudioInfoDialog(true) },
+                onOpenQueue = { viewModel.setQueueOpen(true) }
+            )
+        }
+
+        // Full Screen Animated Playback Queue Sheet
+        AnimatedVisibility(
+            visible = isQueueOpen,
+            enter = slideInVertically(initialOffsetY = { it }),
+            exit = slideOutVertically(targetOffsetY = { it })
+        ) {
+            QueueSheet(
+                playerState = playerState,
+                isAutoplayEnabled = isAutoplayEnabled,
+                autoplayState = autoplayState,
+                onClose = { viewModel.setQueueOpen(false) },
+                onPlaySong = { song -> viewModel.playSong(song, playerState.queue) },
+                onRemoveFromQueue = { song -> viewModel.removeQueuedSong(song) },
+                onMoveQueuedSong = { from, to -> viewModel.moveQueuedSong(from, to) },
+                onClearUpcomingQueue = { viewModel.clearUpcomingQueue() }
             )
         }
 
@@ -386,6 +430,8 @@ fun MainScreen(
         if (showAudioInfoDialog) {
             StreamInfoDialog(
                 playerState = playerState,
+                isAutoplayEnabled = isAutoplayEnabled,
+                autoplayState = autoplayState,
                 onDismiss = { viewModel.setShowAudioInfoDialog(false) }
             )
         }

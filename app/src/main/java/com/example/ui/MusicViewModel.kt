@@ -7,6 +7,11 @@ import com.example.StreamTuneApp
 import com.example.model.Song
 import com.example.player.MusicPlayerManager
 import com.example.player.PlayerState
+import com.example.autoplay.AutoplayController
+import com.example.autoplay.AutoplayPreferences
+import com.example.autoplay.AutoplayState
+import com.example.recommendation.ContentBasedRecommendationEngine
+import com.example.recommendation.RecommendationProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -43,6 +48,23 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     val playerManager = MusicPlayerManager(application, viewModelScope)
     val playerState: StateFlow<PlayerState> = playerManager.playerState
 
+    val autoplayPreferences = AutoplayPreferences(application)
+    val recommendationEngine = ContentBasedRecommendationEngine()
+    val recommendationProvider = RecommendationProvider(repository, recommendationEngine)
+
+    val autoplayController = AutoplayController(
+        playerManager = playerManager,
+        recommendationProvider = recommendationProvider,
+        repository = repository,
+        preferences = autoplayPreferences,
+        scope = viewModelScope,
+        historyProvider = { history.value },
+        favoritesProvider = { favorites.value }
+    )
+
+    val autoplayState: StateFlow<AutoplayState> = autoplayController.autoplayState
+    val isAutoplayEnabled: StateFlow<Boolean> = autoplayPreferences.isAutoplayEnabledFlow
+
     private val _currentTab = MutableStateFlow(NavigationTab.EXPLORE)
     val currentTab: StateFlow<NavigationTab> = _currentTab.asStateFlow()
 
@@ -57,6 +79,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _isNowPlayingExpanded = MutableStateFlow(false)
     val isNowPlayingExpanded: StateFlow<Boolean> = _isNowPlayingExpanded.asStateFlow()
+
+    private val _isQueueOpen = MutableStateFlow(false)
+    val isQueueOpen: StateFlow<Boolean> = _isQueueOpen.asStateFlow()
 
     private val _showAudioInfoDialog = MutableStateFlow(false)
     val showAudioInfoDialog: StateFlow<Boolean> = _showAudioInfoDialog.asStateFlow()
@@ -76,6 +101,16 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
 
     init {
+        // Player callbacks
+        playerManager.onQueueEndedCallback = { lastSong ->
+            autoplayController.onQueueEnded(lastSong)
+        }
+
+        playerManager.onTrackTransitionCallback = { nextSong ->
+            playSong(nextSong, playerState.value.queue)
+            autoplayController.replenishQueueIfNeeded(nextSong, threshold = 1, batchSize = 3)
+        }
+
         playerManager.onErrorFallback = { failedSong, _ ->
             viewModelScope.launch {
                 _streamResolution.value = StreamResolutionState(
@@ -151,6 +186,9 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playSong(song: Song, queue: List<Song> = listOf(song)) {
+        // Cancel any active autoplay recommendations when user manually starts a track
+        autoplayController.cancelActiveAutoplay("User manually started track ${song.title}")
+
         viewModelScope.launch {
             _streamResolution.value = StreamResolutionState(
                 isResolving = true,
@@ -193,8 +231,20 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun playNext() {
-        playerManager.playNextTrack { nextSong ->
-            playSong(nextSong, playerState.value.queue)
+        val state = playerState.value
+        if (state.queue.isEmpty()) return
+
+        if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ALL) {
+            val nextIdx = (state.queueIndex + 1) % state.queue.size
+            state.queue.getOrNull(nextIdx)?.let { playSong(it, state.queue) }
+        } else if (state.queueIndex < state.queue.size - 1) {
+            val nextSong = state.queue[state.queueIndex + 1]
+            playSong(nextSong, state.queue)
+        } else {
+            // Reached the end of queue; if autoplay is active, request autoplay transition
+            state.currentSong?.let {
+                autoplayController.onQueueEnded(it)
+            }
         }
     }
 
@@ -202,6 +252,14 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         playerManager.playPreviousTrack { prevSong ->
             playSong(prevSong, playerState.value.queue)
         }
+    }
+
+    fun toggleAutoplay(): Boolean {
+        return autoplayController.toggleAutoplay()
+    }
+
+    fun setAutoplayEnabled(enabled: Boolean) {
+        autoplayController.setAutoplayEnabled(enabled)
     }
 
     fun toggleFavorite(song: Song) {
@@ -221,12 +279,46 @@ class MusicViewModel(application: Application) : AndroidViewModel(application) {
         _isNowPlayingExpanded.value = expanded
     }
 
+    fun setQueueOpen(open: Boolean) {
+        _isQueueOpen.value = open
+    }
+
     fun setShowAudioInfoDialog(show: Boolean) {
         _showAudioInfoDialog.value = show
     }
 
+    /**
+     * Plays only the selected song from search results, clearing previous upcoming
+     * queue, and starts generating recommendations for that song if autoplay is enabled.
+     */
+    fun playSongFromSearch(song: Song) {
+        autoplayController.clearSession()
+        playSong(song, listOf(song))
+        if (isAutoplayEnabled.value) {
+            autoplayController.generateInitialQueue(song, batchSize = 3)
+        }
+    }
+
+    fun addSongToQueue(song: Song) {
+        playerManager.appendSongToQueue(song)
+    }
+
+    fun removeQueuedSong(song: Song) {
+        autoplayController.recordUserRemovedSong(song.id)
+        playerManager.removeQueuedSongById(song.id)
+    }
+
+    fun moveQueuedSong(fromUpcomingIndex: Int, toUpcomingIndex: Int) {
+        playerManager.reorderUpcomingQueue(fromUpcomingIndex, toUpcomingIndex)
+    }
+
+    fun clearUpcomingQueue() {
+        playerManager.clearUpcomingQueue()
+    }
+
     override fun onCleared() {
         super.onCleared()
+        autoplayController.cancelActiveAutoplay("ViewModel cleared")
         playerManager.release()
     }
 }

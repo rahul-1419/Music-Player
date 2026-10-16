@@ -12,7 +12,9 @@ data class Song(
     val audioFormat: String? = null,
     val isFavorite: Boolean = false,
     val views: Long = 0,
-    val alternativeStreamUrls: List<String> = emptyList()
+    val alternativeStreamUrls: List<String> = emptyList(),
+    val qualityUrls: Map<AudioQuality, String> = emptyMap(),
+    val album: String? = null
 ) {
     val formattedDuration: String
         get() {
@@ -21,4 +23,8 @@ data class Song(
             val seconds = durationSeconds % 60
             return "%d:%02d".format(minutes, seconds)
         }
+
+    fun getStreamForQuality(quality: AudioQuality): String? {
+        return qualityUrls[quality] ?: streamUrl ?: alternativeStreamUrls.firstOrNull()
+    }
 }

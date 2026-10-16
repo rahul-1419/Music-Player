@@ -3,6 +3,7 @@ package com.example
 import android.app.Application
 import com.example.data.local.MusicDatabase
 import com.example.data.repository.MusicRepository
+import com.example.data.repository.PlaylistRepository
 import com.example.extractor.YouTubeMusicExtractor
 
 class StreamTuneApp : Application() {
@@ -17,6 +18,10 @@ class StreamTuneApp : Application() {
 
     val repository: MusicRepository by lazy {
         MusicRepository(database.musicDao(), extractor)
+    }
+
+    val playlistRepository: PlaylistRepository by lazy {
+        PlaylistRepository(database.playlistDao(), database.musicDao())
     }
 
     override fun onCreate() {

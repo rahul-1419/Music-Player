@@ -73,8 +73,9 @@ fun SearchScreen(
     onQueryChange: (String) -> Unit,
     onSearch: (String) -> Unit,
     onRemoveRecentSearch: (String) -> Unit,
-    onSongClick: (Song, List<Song>) -> Unit,
+    onSongClick: (Song) -> Unit,
     onFavoriteToggle: (Song) -> Unit,
+    onAddToQueue: (Song) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val focusManager = LocalFocusManager.current
@@ -381,8 +382,9 @@ fun SearchScreen(
                             isPlayingThisSong = isPlayingThis,
                             isPlaybackActive = playerState.isPlaying,
                             isFavorite = isFav,
-                            onSongClick = { onSongClick(song, searchState.songs) },
-                            onFavoriteToggle = { onFavoriteToggle(song) }
+                            onSongClick = { onSongClick(song) },
+                            onFavoriteToggle = { onFavoriteToggle(song) },
+                            onAddToQueue = { onAddToQueue(song) }
                         )
                     }
                 }

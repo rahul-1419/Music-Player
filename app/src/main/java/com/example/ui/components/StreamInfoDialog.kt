@@ -47,6 +47,8 @@ import com.example.ui.theme.WaveEmerald
 @Composable
 fun StreamInfoDialog(
     playerState: PlayerState,
+    isAutoplayEnabled: Boolean = true,
+    autoplayState: com.example.autoplay.AutoplayState = com.example.autoplay.AutoplayState(),
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -109,6 +111,8 @@ fun StreamInfoDialog(
                     PipelineStep(step = "3", title = "Audio Stream URL", desc = "${playerState.audioFormat ?: "M4A"} @ ${playerState.bitrate ?: 160} kbps")
                     PipelineArrow()
                     PipelineStep(step = "4", title = "Media3 Player", desc = "Direct ad-free streaming playback without saving to disk")
+                    PipelineArrow()
+                    PipelineStep(step = "5", title = "Autoplay Engine", desc = "Content-based candidate ranking with anti-repetition diversity")
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -125,12 +129,16 @@ fun StreamInfoDialog(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 TelemetryRow(label = "Engine", value = "NewPipeExtractor + Media3 ExoPlayer")
+                TelemetryRow(label = "Autoplay", value = if (isAutoplayEnabled) "Active (${autoplayState.status})" else "Disabled")
                 TelemetryRow(label = "Format", value = playerState.audioFormat ?: "M4A / Opus")
                 TelemetryRow(label = "Bitrate", value = "${playerState.bitrate ?: 160} kbps")
                 TelemetryRow(
                     label = "Buffered",
                     value = "${playerState.bufferedPositionMs / 1000}s / ${playerState.totalDurationMs / 1000}s"
                 )
+                autoplayState.candidateExplanation?.let { explanation ->
+                    TelemetryRow(label = "Signal", value = explanation)
+                }
 
                 Spacer(modifier = Modifier.height(16.dp))
 

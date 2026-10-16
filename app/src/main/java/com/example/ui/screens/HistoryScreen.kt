@@ -41,6 +41,7 @@ fun HistoryScreen(
     playerState: PlayerState,
     onSongClick: (Song, List<Song>) -> Unit,
     onFavoriteToggle: (Song) -> Unit,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (history.isEmpty()) {
@@ -109,7 +110,8 @@ fun HistoryScreen(
                     isPlaybackActive = playerState.isPlaying,
                     isFavorite = isFav,
                     onSongClick = { onSongClick(song, history) },
-                    onFavoriteToggle = { onFavoriteToggle(song) }
+                    onFavoriteToggle = { onFavoriteToggle(song) },
+                    onAddToPlaylist = if (onAddToPlaylist != null) { { onAddToPlaylist(song) } } else null
                 )
             }
         }

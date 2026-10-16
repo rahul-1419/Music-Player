@@ -46,6 +46,7 @@ fun FavoritesScreen(
     onSongClick: (Song, List<Song>) -> Unit,
     onFavoriteToggle: (Song) -> Unit,
     onExploreClick: () -> Unit,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     if (favorites.isEmpty()) {
@@ -137,7 +138,8 @@ fun FavoritesScreen(
                     isPlaybackActive = playerState.isPlaying,
                     isFavorite = true,
                     onSongClick = { onSongClick(song, favorites) },
-                    onFavoriteToggle = { onFavoriteToggle(song) }
+                    onFavoriteToggle = { onFavoriteToggle(song) },
+                    onAddToPlaylist = if (onAddToPlaylist != null) { { onAddToPlaylist(song) } } else null
                 )
             }
         }

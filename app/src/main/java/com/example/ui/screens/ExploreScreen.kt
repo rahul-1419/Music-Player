@@ -69,6 +69,7 @@ fun ExploreScreen(
     onSongClick: (Song, List<Song>) -> Unit,
     onFavoriteToggle: (Song) -> Unit,
     onQuickSearch: (String) -> Unit,
+    onAddToPlaylist: ((Song) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val quickPicks = listOf(
@@ -281,7 +282,8 @@ fun ExploreScreen(
                 isPlaybackActive = playerState.isPlaying,
                 isFavorite = isFav,
                 onSongClick = { onSongClick(song, curatedSongs) },
-                onFavoriteToggle = { onFavoriteToggle(song) }
+                onFavoriteToggle = { onFavoriteToggle(song) },
+                onAddToPlaylist = if (onAddToPlaylist != null) { { onAddToPlaylist(song) } } else null
             )
         }
     }

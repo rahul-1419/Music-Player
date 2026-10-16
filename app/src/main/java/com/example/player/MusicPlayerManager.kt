@@ -69,6 +69,8 @@ class MusicPlayerManager(
     private val pendingCandidateUrls = mutableListOf<String>()
 
     var onErrorFallback: ((Song, Boolean) -> Unit)? = null
+    var onQueueEndedCallback: ((Song) -> Unit)? = null
+    var onTrackTransitionCallback: ((Song) -> Unit)? = null
 
     private val _playerState = MutableStateFlow(PlayerState())
     val playerState: StateFlow<PlayerState> = _playerState.asStateFlow()
@@ -229,12 +231,174 @@ class MusicPlayerManager(
     }
 
     private fun handleTrackEnded() {
-        if (_playerState.value.repeatMode == Player.REPEAT_MODE_ONE) {
+        val state = _playerState.value
+        val currentSong = state.currentSong ?: return
+
+        if (state.repeatMode == Player.REPEAT_MODE_ONE) {
             seekTo(0)
             resume()
-        } else {
-            playNextTrack()
+            return
         }
+
+        if (state.queue.isEmpty()) {
+            return
+        }
+
+        if (state.repeatMode == Player.REPEAT_MODE_ALL) {
+            val nextIdx = if (state.isShuffleOn) {
+                (0 until state.queue.size).random()
+            } else {
+                (state.queueIndex + 1) % state.queue.size
+            }
+            val nextSong = state.queue.getOrNull(nextIdx) ?: state.queue.first()
+            onTrackTransitionCallback?.invoke(nextSong)
+            return
+        }
+
+        // Repeat mode is OFF:
+        if (state.isShuffleOn) {
+            if (state.queueIndex >= state.queue.size - 1) {
+                onQueueEndedCallback?.invoke(currentSong)
+            } else {
+                val nextIdx = state.queueIndex + 1
+                val nextSong = state.queue.getOrNull(nextIdx)
+                if (nextSong != null) {
+                    onTrackTransitionCallback?.invoke(nextSong)
+                } else {
+                    onQueueEndedCallback?.invoke(currentSong)
+                }
+            }
+        } else {
+            if (state.queueIndex < state.queue.size - 1) {
+                val nextSong = state.queue[state.queueIndex + 1]
+                onTrackTransitionCallback?.invoke(nextSong)
+            } else {
+                onQueueEndedCallback?.invoke(currentSong)
+            }
+        }
+    }
+
+    fun appendSongToQueue(song: Song) {
+        val currentQueue = _playerState.value.queue.toMutableList()
+        if (currentQueue.none { it.id == song.id }) {
+            currentQueue.add(song)
+            _playerState.value = _playerState.value.copy(queue = currentQueue)
+        }
+    }
+
+    fun appendSongsToQueue(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        val currentQueue = _playerState.value.queue.toMutableList()
+        var addedAny = false
+        for (song in songs) {
+            if (currentQueue.none { it.id == song.id }) {
+                currentQueue.add(song)
+                addedAny = true
+            }
+        }
+        if (addedAny) {
+            _playerState.value = _playerState.value.copy(queue = currentQueue)
+        }
+    }
+
+    fun addSongToUpcoming(song: Song) {
+        appendSongToQueue(song)
+    }
+
+    fun removeQueuedSongById(songId: String): Boolean {
+        val state = _playerState.value
+        val curIdx = state.queueIndex
+        val targetIdx = state.queue.indexOfFirst { it.id == songId }
+        // Cannot remove the currently playing song from queue while it is playing
+        if (targetIdx == -1 || targetIdx == curIdx) return false
+
+        val newQueue = state.queue.toMutableList()
+        newQueue.removeAt(targetIdx)
+        val newCurIdx = if (targetIdx < curIdx) (curIdx - 1).coerceAtLeast(0) else curIdx
+
+        _playerState.value = state.copy(
+            queue = newQueue,
+            queueIndex = newCurIdx
+        )
+        return true
+    }
+
+    fun removeQueuedSongAt(index: Int): Boolean {
+        val state = _playerState.value
+        val curIdx = state.queueIndex
+        if (index < 0 || index >= state.queue.size || index == curIdx) return false
+
+        val newQueue = state.queue.toMutableList()
+        newQueue.removeAt(index)
+        val newCurIdx = if (index < curIdx) (curIdx - 1).coerceAtLeast(0) else curIdx
+
+        _playerState.value = state.copy(
+            queue = newQueue,
+            queueIndex = newCurIdx
+        )
+        return true
+    }
+
+    fun reorderUpcomingQueue(fromUpcomingIndex: Int, toUpcomingIndex: Int): Boolean {
+        val state = _playerState.value
+        val curIdx = state.queueIndex
+        val upcomingStart = curIdx + 1
+        val actualFrom = upcomingStart + fromUpcomingIndex
+        val actualTo = upcomingStart + toUpcomingIndex
+
+        if (actualFrom !in upcomingStart until state.queue.size ||
+            actualTo !in upcomingStart until state.queue.size ||
+            actualFrom == actualTo
+        ) {
+            return false
+        }
+
+        val newQueue = state.queue.toMutableList()
+        val item = newQueue.removeAt(actualFrom)
+        newQueue.add(actualTo, item)
+
+        _playerState.value = state.copy(queue = newQueue)
+        return true
+    }
+
+    fun clearUpcomingQueue() {
+        val state = _playerState.value
+        val curIdx = state.queueIndex
+        if (curIdx < 0 || curIdx >= state.queue.size) {
+            _playerState.value = state.copy(queue = emptyList(), queueIndex = -1)
+            return
+        }
+        val keptQueue = state.queue.subList(0, curIdx + 1).toList()
+        _playerState.value = state.copy(queue = keptQueue)
+    }
+
+    fun getUpcomingQueue(): List<Song> {
+        val state = _playerState.value
+        val curIdx = state.queueIndex
+        if (curIdx < 0 || curIdx >= state.queue.size - 1) return emptyList()
+        return state.queue.subList(curIdx + 1, state.queue.size)
+    }
+
+    fun appendAndPlaySong(
+        song: Song,
+        streamUrl: String,
+        bitrate: Int?,
+        format: String?,
+        backupUrls: List<String> = song.alternativeStreamUrls
+    ) {
+        val currentQueue = _playerState.value.queue.toMutableList()
+        val existingIdx = currentQueue.indexOfFirst { it.id == song.id }
+        if (existingIdx == -1) {
+            currentQueue.add(song)
+        }
+        playSongWithStream(
+            song = song,
+            streamUrl = streamUrl,
+            bitrate = bitrate,
+            format = format,
+            queue = currentQueue,
+            backupUrls = backupUrls
+        )
     }
 
     fun setResolvingStream(isResolving: Boolean) {

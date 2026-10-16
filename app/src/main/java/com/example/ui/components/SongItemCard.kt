@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -53,6 +55,8 @@ fun SongItemCard(
     isFavorite: Boolean,
     onSongClick: () -> Unit,
     onFavoriteToggle: () -> Unit,
+    onAddToQueue: (() -> Unit)? = null,
+    onAddToPlaylist: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
@@ -184,6 +188,40 @@ fun SongItemCard(
                             fontWeight = FontWeight.Medium
                         ),
                         color = ElectricViolet
+                    )
+                }
+            }
+
+            // Add to Queue button
+            if (onAddToQueue != null) {
+                IconButton(
+                    onClick = onAddToQueue,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("add_to_queue_${song.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = "Add to queue",
+                        tint = NeonCyan,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            // Add to Playlist button
+            if (onAddToPlaylist != null) {
+                IconButton(
+                    onClick = onAddToPlaylist,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("add_to_playlist_${song.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlaylistAdd,
+                        contentDescription = "Add to playlist",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(22.dp)
                     )
                 }
             }
